@@ -45,6 +45,7 @@ import sys
 import time
 import wave
 from pathlib import Path
+from typing import Dict, List, Optional
 
 # Parámetros SadTalker (deben coincidir con manifiesto_clips.json).
 SADTALKER_ARGS = [
@@ -65,7 +66,7 @@ def wav_duracion(path: Path) -> float:
         return w.getnframes() / w.getframerate()
 
 
-def mp4_duracion(path: Path) -> float | None:
+def mp4_duracion(path: Path) -> Optional[float]:
     """Duración real del mp4 vía ffprobe (None si ffprobe no está o falla)."""
     ffprobe = shutil.which("ffprobe")
     if not ffprobe:
@@ -107,7 +108,7 @@ def correr_sadtalker(sadtalker_dir: Path, png: Path, wav: Path,
                           timeout=timeout_s)
 
 
-def escribir_reporte(ruta_json: Path, ruta_md: Path, filas: list[dict],
+def escribir_reporte(ruta_json: Path, ruta_md: Path, filas: List[Dict],
                      inicio: float) -> None:
     ok = sum(1 for f in filas if f["estado"] == "ok")
     datos = {
@@ -180,7 +181,7 @@ def main() -> int:
         return 2
 
     inicio = time.time()
-    filas: list[dict] = []
+    filas: List[Dict] = []
     for c in clips:
         salida = root / c["salida"]
         fila = {
