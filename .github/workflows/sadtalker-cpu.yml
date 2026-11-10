@@ -1,0 +1,137 @@
+# SadTalker CPU — Episodio 1 de "La heredera que vendieron"
+#
+# Genera los 25 clips de video (foto lock + narración Kokoro) con SadTalker
+# en un runner de GitHub Actions SIN GPU, sin secretos y sin login.
+# Se dispara a mano desde la pestaña Actions > Run workflow.
+#
+# Por qué ubuntu-22.04 + Python 3.8 (NO 3.10, NO ubuntu-24.04):
+# SadTalker exige oficialmente Python 3.8; Python 3.10+ rompe sus
+# C-extensiones (basicsr, dlib, torchvision legacy). setup-python no ofrece
+# 3.8 en ubuntu-24.04, así que el runner es ubuntu-22.04.
+# Por la misma razón se instala torch 1.12.1 CPU, la versión del README.
+#
+# El job tiene timeout de 360 min (límite del runner: 6 h). La generación en
+# CPU es lenta (ver README > Tiempo estimado) y el script es reanudable:
+# los clips ya generados se conservan en caché entre corridas y se saltan.
+
+name: SadTalker CPU — Episodio 1
+
+on:
+  workflow_dispatch:
+    inputs:
+      solo_sync:
+        description: "Solo clips sync (18). Si es false, genera los 25 (sync + VO)"
+        type: boolean
+        default: false
+      max_clips:
+        description: "Límite de clips (0 = todos). Pon 2 para una prueba rápida"
+        type: number
+        default: 0
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sadtalker-ep01
+  cancel-in-progress: false
+
+jobs:
+  sadtalker-cpu:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python 3.8
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.8"
+
+      - name: Dependencias del sistema
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y ffmpeg cmake libgl1 libglib2.0-0 \
+            libopenblas-dev liblapack-dev
+          python --version
+          ffmpeg -version | head -1
+          df -h
+
+      - name: Clonar SadTalker (OpenTalker, Apache 2.0)
+        run: git clone --depth 1 https://github.com/OpenTalker/SadTalker.git
+
+      - name: Caché de pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-ubuntu22.04-py38-${{ hashFiles('SadTalker/requirements.txt') }}
+          restore-keys: pip-ubuntu22.04-py38-
+
+      - name: PyTorch CPU 1.12.1 (versión del README de SadTalker)
+        run: |
+          pip install --upgrade pip
+          pip install torch==1.12.1+cpu torchvision==0.13.1+cpu \
+            torchaudio==0.12.1 \
+            --extra-index-url https://download.pytorch.org/whl/cpu
+
+      - name: Requisitos de SadTalker
+        # requirements.txt fija torch CUDA; ya instalamos el torch CPU, así
+        # que se quitan sus líneas (misma receta que usan los notebooks de
+        # Colab). dlib se compila desde el código fuente: 15-25 min en 2 vCPU.
+        run: |
+          cd SadTalker
+          sed -i '/^torch/d; /^torchvision/d; /^torchaudio/d' requirements.txt
+          pip install -r requirements.txt \
+            --extra-index-url https://download.pytorch.org/whl/cpu
+
+      - name: Caché de checkpoints
+        uses: actions/cache@v4
+        with:
+          path: SadTalker/checkpoints
+          key: sadtalker-ckpt-v0.0.2
+          restore-keys: sadtalker-ckpt-
+
+      - name: Descargar checkpoints (script oficial)
+        # ~2.5-3.5 GB: SadTalker_V0.0.2_256 + 512, mapping, BFM_Fitting y
+        # pesos GFPGAN/facexlib. Solo usamos el modelo 256 (sin enhancer),
+        # pero el script oficial baja el paquete completo; wget -nc salta lo
+        # que ya esté en caché.
+        run: |
+          cd SadTalker
+          bash scripts/download_models.sh
+          ls -lh checkpoints/
+          du -sh checkpoints/ gfpgan/weights/ 2>/dev/null || true
+          df -h
+
+      - name: Caché de clips (para reanudar entre corridas)
+        uses: actions/cache@v4
+        with:
+          path: clips
+          key: clips-ep01-${{ hashFiles('manifiesto_clips.json') }}-${{ github.run_number }}
+          restore-keys: clips-ep01-
+
+      - name: Generar clips
+        run: |
+          ARGS=""
+          if [ "${{ inputs.solo_sync }}" = "true" ]; then ARGS="$ARGS --solo-sync"; fi
+          if [ "${{ inputs.max_clips }}" != "0" ]; then ARGS="$ARGS --max-clips ${{ inputs.max_clips }}"; fi
+          python scripts/generar_clips.py --manifiesto manifiesto_clips.json \
+            --sadtalker-dir SadTalker $ARGS
+
+      - name: Subir clips (siempre, aunque fallen algunos)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: clips-episodio-01
+          path: clips/
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Subir reporte y logs (siempre)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: logs-episodio-01
+          path: logs/
+          if-no-files-found: warn
+          retention-days: 7
