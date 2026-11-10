@@ -116,8 +116,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: clips
-          key: clips-ep01-${{ hashFiles('manifiesto_clips.json') }}-${{ github.run_number }}
-          restore-keys: clips-ep01-
+          key: clips-ep01-v2-${{ hashFiles('manifiesto_clips.json') }}-${{ github.run_number }}
+          restore-keys: clips-ep01-v2-
 
       - name: Generar clips
         run: |
