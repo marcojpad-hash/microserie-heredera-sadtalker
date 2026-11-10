@@ -88,7 +88,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: SadTalker/checkpoints
-          key: sadtalker-ckpt-v0.0.2
+          key: sadtalker-ckpt-v0.0.2-bfm1
           restore-keys: sadtalker-ckpt-
 
       - name: Descargar checkpoints (script oficial)
@@ -96,9 +96,18 @@ jobs:
         # pesos GFPGAN/facexlib. Solo usamos el modelo 256 (sin enhancer),
         # pero el script oficial baja el paquete completo; wget -nc salta lo
         # que ya esté en caché.
+        # OJO: el script oficial YA NO baja BFM_Fitting (sus dos líneas
+        # están comentadas en download_models.sh) y SadTalker lo exige en
+        # --preprocess full: sin él, generar_clips.py aborta con exit 2.
+        # Por eso se baja explícito de la release v0.0.2 (385 MB) y se
+        # verifica que el directorio exista antes de seguir. La caché se
+        # versionó a -bfm1 para que el nuevo contenido quede guardado.
         run: |
           cd SadTalker
           bash scripts/download_models.sh
+          wget -nc https://github.com/OpenTalker/SadTalker/releases/download/v0.0.2/BFM_Fitting.zip -O ./checkpoints/BFM_Fitting.zip
+          unzip -n ./checkpoints/BFM_Fitting.zip -d ./checkpoints/
+          test -d checkpoints/BFM_Fitting || { echo "FALTA BFM_Fitting tras la descarga" >&2; exit 1; }
           ls -lh checkpoints/
           du -sh checkpoints/ gfpgan/weights/ 2>/dev/null || true
           df -h
